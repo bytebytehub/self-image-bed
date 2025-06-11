@@ -7,6 +7,7 @@ import { getUserImages, deleteUserImage, updateImageInfo, searchUserImages } fro
 import { getUserFavorites, addToFavorites, removeFromFavorites, checkFavoriteStatus, batchFavoriteOperation } from './functions/user/favorites';
 import { getUserTags, createTag, updateTag, deleteTag, batchTagOperation, getTagImages } from './functions/user/tags';
 import { authMiddleware } from './functions/utils/auth';
+import { apiUpload, apiUploadWithAuth, getStorageProviders, healthCheck, getUploadConfig } from './functions/api/upload';
 
 const app = new Hono();
 
@@ -18,6 +19,15 @@ app.get('/file/:id', fileHandler);
 
 // 根路径重定向到index.html
 app.get('/', (c) => c.redirect('/index.html'));
+
+// API 上传接口
+app.post('/api/upload', apiUpload); // 无认证上传
+app.post('/api/upload/auth', apiUploadWithAuth); // 需要认证的上传
+
+// 存储管理 API
+app.get('/api/storage/providers', getStorageProviders); // 获取可用存储提供商
+app.get('/api/storage/health', healthCheck); // 存储健康检查
+app.get('/api/upload/config', getUploadConfig); // 获取上传配置
 
 // 用户认证相关API
 app.post('/api/auth/register', register);

@@ -8,6 +8,37 @@ TG_Bot_Token = "8116484812:AAHIfsz9iFiMwWi2_BwQ1kuUrRWQgkCcdRw"
 TG_Chat_ID = "-1002509744447"
 JWT_SECRET = "your-jwt-secret-key-change-this-in-production"
 
+# 存储配置
+DEFAULT_STORAGE_PROVIDER = "telegram"  # 默认存储提供商: telegram, s3, minio, supabase
+
+# AWS S3 配置 (可选)
+# AWS_ACCESS_KEY_ID = "your-aws-access-key"
+# AWS_SECRET_ACCESS_KEY = "your-aws-secret-key"
+# AWS_S3_BUCKET = "your-s3-bucket"
+# AWS_REGION = "us-east-1"
+# AWS_S3_ENDPOINT = "https://s3.us-east-1.amazonaws.com"  # 可选，自定义端点
+# AWS_S3_PUBLIC_URL = "https://your-bucket.s3.amazonaws.com"  # 可选，自定义公共URL
+
+# MinIO 配置 (可选)
+# MINIO_ENDPOINT = "your-minio-endpoint.com"
+# MINIO_ACCESS_KEY = "your-minio-access-key"
+# MINIO_SECRET_KEY = "your-minio-secret-key"
+# MINIO_BUCKET = "your-minio-bucket"
+# MINIO_REGION = "us-east-1"  # 可选，默认 us-east-1
+# MINIO_USE_SSL = "true"  # 可选，默认 true
+# MINIO_PORT = "9000"  # 可选，默认根据SSL自动选择
+
+# Supabase Storage 配置 (可选)
+# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_ANON_KEY = "your-supabase-anon-key"
+# SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"  # 可选，用于管理员操作
+# SUPABASE_BUCKET = "your-supabase-bucket"
+
+# 上传限制配置 (可选)
+# MAX_FILE_SIZE = "50MB"
+# ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,image/webp"  # 逗号分隔
+# REQUIRE_AUTH_FOR_UPLOAD = "false"
+
 # 注意：在部署前，请先创建这些 KV 命名空间，并将生成的 ID 填入下面的配置中
 # 使用以下命令创建 KV 命名空间（Wrangler 4.x 版本）：
 # npx wrangler kv namespace create "img_url"

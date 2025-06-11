@@ -1,3 +1,5 @@
+import { StorageManager } from "../storage/StorageManager.js";
+
 export async function fileHandler(c) {
     const env = c.env;
     const id = c.req.param('id');
@@ -25,18 +27,45 @@ export async function fileHandler(c) {
 
     try {
         let fileUrl = null;
+        let metadata = null;
 
-        // 尝试处理通过Telegram Bot API上传的文件
-        if (id.length > 30 || id.includes('.')) { // 长ID通常代表通过Bot上传的文件，或包含扩展名的文件
-            const fileId = id.split('.')[0]; // 分离文件ID和扩展名
-            const filePath = await getFilePath(env, fileId);
+        // 首先检查 KV 存储中的文件元数据
+        if (env.img_url) {
+            const record = await env.img_url.getWithMetadata(id);
+            if (record && record.metadata) {
+                metadata = record.metadata;
 
-            if (filePath) {
-                fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
+                // 根据存储提供商获取文件URL
+                const provider = metadata.provider || 'telegram'; // 默认为 telegram 以保持向后兼容
+
+                try {
+                    const storageManager = new StorageManager(env);
+                    if (storageManager.isProviderAvailable(provider)) {
+                        const providerInstance = storageManager.getProvider(provider);
+                        fileUrl = await providerInstance.getFileUrl(id);
+                        console.log(`使用 ${provider} 存储提供商获取文件URL: ${fileUrl}`);
+                    }
+                } catch (error) {
+                    console.error(`获取 ${provider} 文件URL失败:`, error);
+                    // 继续尝试传统方法
+                }
             }
-        } else {
-            // 处理Telegraph链接
-            fileUrl = `https://telegra.ph/file/${id}`;
+        }
+
+        // 如果没有从新系统获取到URL，尝试传统方法
+        if (!fileUrl) {
+            // 尝试处理通过Telegram Bot API上传的文件
+            if (id.length > 30 || id.includes('.')) { // 长ID通常代表通过Bot上传的文件，或包含扩展名的文件
+                const fileId = id.split('.')[0]; // 分离文件ID和扩展名
+                const filePath = await getFilePath(env, fileId);
+
+                if (filePath) {
+                    fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
+                }
+            } else {
+                // 处理Telegraph链接
+                fileUrl = `https://telegra.ph/file/${id}`;
+            }
         }
 
         // 如果找到文件URL
