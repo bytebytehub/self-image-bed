@@ -163,6 +163,110 @@
 
 ---
 
+## 🆕 新功能亮点
+
+<div align="center">
+
+### 🗄️ 多存储后端支持
+
+<table>
+  <tr>
+    <th align="center">🔧 存储类型</th>
+    <th align="center">📝 描述</th>
+    <th align="center">🎯 适用场景</th>
+  </tr>
+  <tr>
+    <td align="center"><strong>Telegram</strong></td>
+    <td align="center">免费无限存储，快速部署</td>
+    <td align="center">个人项目、快速原型</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>AWS S3</strong></td>
+    <td align="center">企业级对象存储，高可用</td>
+    <td align="center">生产环境、大型项目</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>MinIO</strong></td>
+    <td align="center">自托管S3兼容存储</td>
+    <td align="center">私有部署、数据安全</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Supabase</strong></td>
+    <td align="center">现代化BaaS存储服务</td>
+    <td align="center">全栈应用、快速开发</td>
+  </tr>
+</table>
+
+### 📡 API 上传接口
+
+<table>
+  <tr>
+    <th align="center">🎯 功能</th>
+    <th align="center">📝 描述</th>
+    <th align="center">🔗 端点</th>
+  </tr>
+  <tr>
+    <td align="center"><strong>程序化上传</strong></td>
+    <td align="center">支持脚本和应用集成</td>
+    <td align="center"><code>/api/upload</code></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>认证上传</strong></td>
+    <td align="center">需要JWT令牌的安全上传</td>
+    <td align="center"><code>/api/upload/auth</code></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>存储管理</strong></td>
+    <td align="center">查看可用存储提供商</td>
+    <td align="center"><code>/api/storage/providers</code></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>健康检查</strong></td>
+    <td align="center">监控存储服务状态</td>
+    <td align="center"><code>/api/storage/health</code></td>
+  </tr>
+</table>
+
+</div>
+
+<details>
+<summary>🚀 <strong>API 使用示例</strong> - 点击展开</summary>
+
+### 📤 基础上传
+```bash
+curl -X POST "https://your-domain.com/api/upload" \
+  -F "file=@image.jpg" \
+  -F "provider=s3"
+```
+
+### 🔐 认证上传
+```bash
+curl -X POST "https://your-domain.com/api/upload/auth" \
+  -H "Authorization: Bearer your-jwt-token" \
+  -F "file=@image.jpg" \
+  -F "provider=minio"
+```
+
+### 📊 响应格式
+```json
+{
+  "success": true,
+  "data": {
+    "fileId": "1234567890_abc123.jpg",
+    "fileName": "image.jpg",
+    "size": 102400,
+    "type": "image/jpeg",
+    "url": "https://your-domain.com/file/1234567890_abc123.jpg",
+    "provider": "s3",
+    "uploadTime": 1640995200000
+  }
+}
+```
+
+</details>
+
+---
+
 ## 🛠️ 技术架构
 
 <div align="center">
@@ -195,10 +299,14 @@
   <tr>
     <td align="center"><strong>数据存储</strong></td>
     <td align="center">
+      <img src="https://img.shields.io/badge/Multi--Storage-4285f4?style=flat-square&logo=database&logoColor=white">
       <img src="https://img.shields.io/badge/Telegram%20API-26a5e4?style=flat-square&logo=telegram&logoColor=white">
+      <img src="https://img.shields.io/badge/AWS%20S3-ff9900?style=flat-square&logo=amazons3&logoColor=white">
+      <img src="https://img.shields.io/badge/MinIO-c72e49?style=flat-square&logo=minio&logoColor=white">
+      <img src="https://img.shields.io/badge/Supabase-3ecf8e?style=flat-square&logo=supabase&logoColor=white">
       <img src="https://img.shields.io/badge/Cloudflare%20KV-f38020?style=flat-square&logo=cloudflare&logoColor=white">
     </td>
-    <td align="center">图片存储 + 元数据缓存</td>
+    <td align="center">多存储后端 + 元数据缓存</td>
   </tr>
   <tr>
     <td align="center"><strong>部署平台</strong></td>
@@ -271,15 +379,48 @@ npm run setup
 
 ```toml
 [vars]
-# 🤖 Telegram Bot 令牌
+# 🤖 Telegram Bot 令牌 (默认存储)
 TG_Bot_Token = "YOUR_BOT_TOKEN"
-
-# 💬 Telegram 聊天/频道 ID  
 TG_Chat_ID = "YOUR_CHAT_ID"
 
 # 🔐 JWT 密钥 (生产环境请修改)
 JWT_SECRET = "your-secure-jwt-secret"
+
+# 🗄️ 存储配置
+DEFAULT_STORAGE_PROVIDER = "telegram"  # 可选: telegram, s3, minio, supabase
+
+# ☁️ AWS S3 配置 (可选)
+# AWS_ACCESS_KEY_ID = "your-aws-access-key"
+# AWS_SECRET_ACCESS_KEY = "your-aws-secret-key"
+# AWS_S3_BUCKET = "your-s3-bucket"
+# AWS_REGION = "us-east-1"
+
+# 🏠 MinIO 配置 (可选)
+# MINIO_ENDPOINT = "your-minio-endpoint.com"
+# MINIO_ACCESS_KEY = "your-minio-access-key"
+# MINIO_SECRET_KEY = "your-minio-secret-key"
+# MINIO_BUCKET = "your-minio-bucket"
+
+# 🚀 Supabase 配置 (可选)
+# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_ANON_KEY = "your-supabase-anon-key"
+# SUPABASE_BUCKET = "your-supabase-bucket"
 ```
+
+</details>
+
+<details>
+<summary>🔧 <strong>存储配置指南</strong></summary>
+
+### 📋 配置步骤
+
+1. **选择存储提供商** - 根据需求选择合适的存储后端
+2. **配置环境变量** - 在 `wrangler.toml` 中添加相应配置
+3. **设置默认提供商** - 通过 `DEFAULT_STORAGE_PROVIDER` 指定
+4. **测试连接** - 使用健康检查 API 验证配置
+
+### 📖 详细配置文档
+查看 [STORAGE_GUIDE.md](./STORAGE_GUIDE.md) 获取完整的配置指南和使用说明。
 
 </details>
 

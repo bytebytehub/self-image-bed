@@ -1,5 +1,6 @@
 import { errorHandling, telemetryData } from "./utils/middleware";
 import { authMiddleware } from "./utils/auth";
+import { StorageManager } from "./storage/StorageManager.js";
 
 // 添加认证中间件包装
 export const authenticatedUpload = async (c) => {
@@ -40,123 +41,85 @@ export async function upload(c) {
 
         console.log(`接收到${files.length}个文件上传请求`);
 
+        // 初始化存储管理器
+        const storageManager = new StorageManager(env);
+
+        // 获取存储提供商选择 (默认使用 Telegram 保持向后兼容)
+        const provider = formData.get('provider') || env.DEFAULT_STORAGE_PROVIDER || 'telegram';
+
         // 处理所有文件上传
         const uploadResults = [];
         for (const uploadFile of files) {
             if (!uploadFile) continue;
 
             const fileName = uploadFile.name;
-            const fileExtension = fileName.split('.').pop().toLowerCase();
+            console.log(`处理文件: ${fileName}, 类型: ${uploadFile.type}, 大小: ${uploadFile.size}`);
 
-            console.log(`处理文件: ${fileName}, 类型: ${uploadFile.type}, 扩展名: ${fileExtension}, 大小: ${uploadFile.size}`);
+            try {
+                // 使用新的存储管理器上传文件
+                const result = await storageManager.uploadFile(uploadFile, {
+                    provider: provider,
+                    metadata: {
+                        userId: userId || "anonymous",
+                        uploadedBy: user ? (user.username || user.email) : "anonymous"
+                    }
+                });
 
-            // 检测是否为GIF文件
-            const isGifFile = fileExtension === 'gif' || uploadFile.type === 'image/gif';
-            if (isGifFile) {
-                console.log(`检测到GIF文件: ${fileName}, Telegram可能会将其转换为MP4格式`);
-            }
+                const fileKey = result.fileId;
+                const timestamp = result.timestamp || Date.now();
 
-            const telegramFormData = new FormData();
-            telegramFormData.append("chat_id", env.TG_Chat_ID);
+                console.log(`文件 ${fileName} 上传成功，文件键: ${fileKey}`);
 
-            // 根据文件类型选择合适的上传方式
-            let apiEndpoint;
-            if (uploadFile.type.startsWith('image/')) {
-                // 对于图片类型，使用sendDocument以保持原图质量
-                telegramFormData.append("document", uploadFile);
-                apiEndpoint = 'sendDocument';
-                console.log(`图片文件使用sendDocument上传: ${fileName}`);
-
-                if (isGifFile) {
-                    console.log(`注意: GIF文件可能被Telegram自动转换为MP4格式`);
-                }
-            } else if (uploadFile.type.startsWith('audio/')) {
-                telegramFormData.append("audio", uploadFile);
-                apiEndpoint = 'sendAudio';
-                console.log(`音频文件使用sendAudio上传: ${fileName}`);
-            } else if (uploadFile.type.startsWith('video/')) {
-                telegramFormData.append("video", uploadFile);
-                apiEndpoint = 'sendVideo';
-                console.log(`视频文件使用sendVideo上传: ${fileName}`);
-            } else {
-                telegramFormData.append("document", uploadFile);
-                apiEndpoint = 'sendDocument';
-                console.log(`其他文件使用sendDocument上传: ${fileName}`);
-            }
-
-            const result = await sendToTelegram(telegramFormData, apiEndpoint, env);
-
-            if (!result.success) {
-                console.error(`文件 ${fileName} 上传失败:`, result.error);
-                continue;
-            }
-
-            const fileId = getFileId(result.data);
-
-            if (!fileId) {
-                console.error(`文件 ${fileName} 获取文件ID失败，响应数据:`, result.data);
-                continue;
-            }
-
-            console.log(`文件 ${fileName} 获取到文件ID: ${fileId}`);
-
-            // 将文件信息保存到 KV 存储
-            // 对于GIF文件，保持原始扩展名，即使Telegram转换为MP4
-            const fileKey = `${fileId}.${fileExtension}`;
-            const timestamp = Date.now();
-
-            console.log(`生成文件键: ${fileKey}`);
-
-            // 如果是GIF文件，记录可能的格式转换
-            if (isGifFile) {
-                console.log(`GIF文件保存为: ${fileKey} (保持原始扩展名)`);
-            }
-
-            if (env.img_url) {
-                // 创建文件元数据
-                const metadata = {
-                    TimeStamp: timestamp,
-                    ListType: "None",
-                    Label: "None",
-                    liked: false,
-                    fileName: fileName,
-                    fileSize: uploadFile.size,
-                    userId: userId || "anonymous" // 添加用户ID
-                };
-
-                // 保存文件元数据
-                await env.img_url.put(fileKey, "", { metadata });
-
-                // 如果是已登录用户，将文件添加到用户的文件列表中
-                if (userId) {
-                    // 获取用户的文件列表
-                    const userFilesKey = `user:${userId}:files`;
-                    let userFiles = await env.img_url.get(userFilesKey, { type: "json" }) || [];
-
-                    console.log('用户文件列表获取:', userFilesKey, userFiles.length ? `已有${userFiles.length}个文件` : '列表为空');
-
-                    // 添加新文件
-                    const newFile = {
-                        id: fileKey,
+                // 保存文件元数据到 KV 存储
+                if (env.img_url) {
+                    const metadata = {
+                        TimeStamp: timestamp,
+                        ListType: "None",
+                        Label: "None",
+                        liked: false,
                         fileName: fileName,
                         fileSize: uploadFile.size,
-                        uploadTime: timestamp,
-                        url: `/file/${fileKey}`
+                        fileType: uploadFile.type,
+                        provider: result.provider,
+                        userId: userId || "anonymous"
                     };
 
-                    userFiles.push(newFile);
-                    console.log('添加新文件到用户列表:', newFile);
+                    await env.img_url.put(fileKey, "", { metadata });
 
-                    // 保存更新后的文件列表
-                    await env.img_url.put(userFilesKey, JSON.stringify(userFiles));
-                    console.log('用户文件列表已更新, 现有文件数:', userFiles.length);
-                } else {
-                    console.log('匿名上传，不关联用户');
+                    // 如果是已登录用户，将文件添加到用户的文件列表中
+                    if (userId) {
+                        const userFilesKey = `user:${userId}:files`;
+                        let userFiles = await env.img_url.get(userFilesKey, { type: "json" }) || [];
+
+                        console.log('用户文件列表获取:', userFilesKey, userFiles.length ? `已有${userFiles.length}个文件` : '列表为空');
+
+                        const newFile = {
+                            id: fileKey,
+                            fileName: fileName,
+                            fileSize: uploadFile.size,
+                            fileType: uploadFile.type,
+                            provider: result.provider,
+                            uploadTime: timestamp,
+                            url: result.url
+                        };
+
+                        userFiles.push(newFile);
+                        console.log('添加新文件到用户列表:', newFile);
+
+                        await env.img_url.put(userFilesKey, JSON.stringify(userFiles));
+                        console.log('用户文件列表已更新, 现有文件数:', userFiles.length);
+                    } else {
+                        console.log('匿名上传，不关联用户');
+                    }
                 }
-            }
 
-            // 添加到上传结果
-            uploadResults.push({ 'src': `/file/${fileKey}` });
+                // 添加到上传结果 (保持原有格式以兼容前端)
+                uploadResults.push({ 'src': result.url });
+            } catch (error) {
+                console.error(`文件 ${fileName} 上传失败:`, error);
+                // 继续处理其他文件
+                continue;
+            }
         }
 
         console.log(`成功上传${uploadResults.length}个文件`);

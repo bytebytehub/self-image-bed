@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "create-kv": "node create-kv.js",
-    "setup": "npm run create-kv && npm run deploy"
+    "setup": "npm run create-kv && npm run deploy",
+    "test-api": "node test-api.js"
   },
   "keywords": [
     "图床",
