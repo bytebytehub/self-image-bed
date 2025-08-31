@@ -75,20 +75,90 @@ async function generateSignature(data, secret) {
     .replace(/=/g, '');
 }
 
-// 密码哈希函数
+// 密码哈希函数 - 使用 PBKDF2 with salt
 export async function hashPassword(password) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  
+  // 生成随机盐
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  
+  // 使用 PBKDF2 进行密钥派生
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  
+  // 派生密钥 (100,000 iterations for security)
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    256
+  );
+  
+  // 将盐和哈希组合存储
+  const hashArray = new Uint8Array(derivedBits);
+  const combined = new Uint8Array(salt.length + hashArray.length);
+  combined.set(salt);
+  combined.set(hashArray, salt.length);
+  
+  // 返回 base64 编码的结果
+  return btoa(String.fromCharCode(...combined));
 }
 
 // 验证密码
 export async function verifyPassword(password, hashedPassword) {
-  const hash = await hashPassword(password);
-  return hash === hashedPassword;
+  const encoder = new TextEncoder();
+  
+  try {
+    // 解码存储的哈希
+    const combined = Uint8Array.from(atob(hashedPassword), c => c.charCodeAt(0));
+    
+    // 提取盐和哈希
+    const salt = combined.slice(0, 16);
+    const storedHash = combined.slice(16);
+    
+    // 使用相同的盐重新计算哈希
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+    
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
+    
+    const hashArray = new Uint8Array(derivedBits);
+    
+    // 比较哈希值
+    if (hashArray.length !== storedHash.length) return false;
+    
+    for (let i = 0; i < hashArray.length; i++) {
+      if (hashArray[i] !== storedHash[i]) return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Password verification error:', error);
+    return false;
+  }
 }
 
 // 认证中间件

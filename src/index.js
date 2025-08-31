@@ -8,8 +8,17 @@ import { getUserFavorites, addToFavorites, removeFromFavorites, checkFavoriteSta
 import { getUserTags, createTag, updateTag, deleteTag, batchTagOperation, getTagImages } from './functions/user/tags';
 import { authMiddleware } from './functions/utils/auth';
 import { apiUpload, apiUploadWithAuth, getStorageProviders, healthCheck, getUploadConfig } from './functions/api/upload';
+import { securityHeaders, corsMiddleware, rateLimiter } from './functions/utils/security';
 
 const app = new Hono();
+
+// Apply security middleware globally
+app.use('*', securityHeaders);
+app.use('*', corsMiddleware);
+
+// Apply rate limiting to API endpoints
+app.use('/api/*', rateLimiter({ max: 100, windowMs: 60000 }));
+app.use('/upload', rateLimiter({ max: 20, windowMs: 60000 }));
 
 // 上传接口
 app.post('/upload', authenticatedUpload);

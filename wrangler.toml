@@ -3,10 +3,14 @@ compatibility_date = "2023-01-01"
 main = "src/index.js"
 
 [vars]
-# 可以在这里设置默认环境变量
-TG_Bot_Token = "8116484812:AAHIfsz9iFiMwWi2_BwQ1kuUrRWQgkCcdRw"
-TG_Chat_ID = "-1002509744447"
-JWT_SECRET = "your-jwt-secret-key-change-this-in-production"
+# 环境变量应该通过 .dev.vars 文件或 Cloudflare Dashboard 设置
+# 请参考 .env.example 文件了解所需的环境变量
+# 不要在此文件中硬编码敏感信息！
+
+# 以下是示例配置，实际值应通过环境变量设置
+# TG_Bot_Token = "" # 通过环境变量设置
+# TG_Chat_ID = "" # 通过环境变量设置
+# JWT_SECRET = "" # 通过环境变量设置
 
 # 存储配置
 DEFAULT_STORAGE_PROVIDER = "telegram"  # 默认存储提供商: telegram, s3, minio, supabase

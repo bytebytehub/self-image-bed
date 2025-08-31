@@ -18,7 +18,7 @@
   "author": "",
   "license": "AGPL-3.0-with-Commons-Clause",
   "dependencies": {
-    "hono": "^3.1.0"
+    "hono": "^4.6.5"
   },
   "devDependencies": {
     "wrangler": "^4.14.4"
