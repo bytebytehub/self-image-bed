@@ -49,13 +49,14 @@ export class S3Storage extends StorageProvider {
     }
 
     async putObject(key, body, contentType, options = {}) {
-        const url = `${this.endpoint}/${this.bucket}/${key}`;
+        const { url, host, canonicalUri, canonicalQueryString } = this.buildRequest('PUT', key);
         const date = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
         const dateStamp = date.substr(0, 8);
         
         const headers = {
             'Content-Type': contentType,
             'Content-Length': body.byteLength.toString(),
+            'Host': host,
             'x-amz-date': date,
             'x-amz-content-sha256': await this.sha256(body)
         };
@@ -64,8 +65,8 @@ export class S3Storage extends StorageProvider {
             headers['x-amz-acl'] = 'public-read';
         }
 
-        const signature = await this.generateSignature('PUT', key, headers, dateStamp);
-        headers['Authorization'] = signature;
+        const authorization = await this.generateSignature('PUT', canonicalUri, canonicalQueryString, headers, dateStamp);
+        headers['Authorization'] = authorization;
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -84,13 +85,10 @@ export class S3Storage extends StorageProvider {
         };
     }
 
-    async generateSignature(method, key, headers, dateStamp) {
+    async generateSignature(method, canonicalUri, canonicalQueryString, headers, dateStamp) {
         const service = 's3';
         const algorithm = 'AWS4-HMAC-SHA256';
         const credentialScope = `${dateStamp}/${this.region}/${service}/aws4_request`;
-        
-        const canonicalUri = `/${this.bucket}/${key}`;
-        const canonicalQueryString = '';
         
         const signedHeaders = Object.keys(headers)
             .map(h => h.toLowerCase())
@@ -122,9 +120,10 @@ export class S3Storage extends StorageProvider {
         ].join('\n');
 
         const signingKey = await this.getSignatureKey(this.secretAccessKey, dateStamp, this.region, service);
-        const signature = await this.hmacSha256(signingKey, stringToSign);
+        const signatureBytes = await this.hmacSha256(signingKey, stringToSign);
+        const signatureHex = this.toHex(signatureBytes);
         
-        return `${algorithm} Credential=${this.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+        return `${algorithm} Credential=${this.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signatureHex}`;
     }
 
     async getSignatureKey(key, dateStamp, regionName, serviceName) {
@@ -152,6 +151,10 @@ export class S3Storage extends StorageProvider {
         return new Uint8Array(signature);
     }
 
+    toHex(bytes) {
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
     async sha256(data) {
         const encoder = new TextEncoder();
         const dataBuffer = typeof data === 'string' ? encoder.encode(data) : data;
@@ -162,17 +165,18 @@ export class S3Storage extends StorageProvider {
 
     async deleteFile(fileId) {
         try {
-            const url = `${this.endpoint}/${this.bucket}/${fileId}`;
+            const { url, host, canonicalUri, canonicalQueryString } = this.buildRequest('DELETE', fileId);
             const date = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
             const dateStamp = date.substr(0, 8);
             
             const headers = {
+                'Host': host,
                 'x-amz-date': date,
                 'x-amz-content-sha256': await this.sha256('')
             };
 
-            const signature = await this.generateSignature('DELETE', fileId, headers, dateStamp);
-            headers['Authorization'] = signature;
+            const authorization = await this.generateSignature('DELETE', canonicalUri, canonicalQueryString, headers, dateStamp);
+            headers['Authorization'] = authorization;
 
             const response = await fetch(url, {
                 method: 'DELETE',
@@ -197,17 +201,18 @@ export class S3Storage extends StorageProvider {
 
     async healthCheck() {
         try {
-            const url = `${this.endpoint}/${this.bucket}?max-keys=1`;
+            const { url, host, canonicalUri, canonicalQueryString } = this.buildRequest('GET', '', { 'max-keys': '1' });
             const date = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
             const dateStamp = date.substr(0, 8);
             
             const headers = {
+                'Host': host,
                 'x-amz-date': date,
                 'x-amz-content-sha256': await this.sha256('')
             };
 
-            const signature = await this.generateSignature('GET', '', headers, dateStamp);
-            headers['Authorization'] = signature;
+            const authorization = await this.generateSignature('GET', canonicalUri, canonicalQueryString, headers, dateStamp);
+            headers['Authorization'] = authorization;
 
             const response = await fetch(url, {
                 method: 'GET',
@@ -247,5 +252,47 @@ export class S3Storage extends StorageProvider {
                 deleteSupport: true
             }
         };
+    }
+
+    buildRequest(method, key = '', query = undefined) {
+        const endpointUrl = new URL(this.endpoint);
+        const endpointHost = endpointUrl.host;
+        const protocol = endpointUrl.protocol || 'https:';
+        const useVirtual = this.shouldUseVirtualHost();
+
+        let host;
+        let path;
+        if (useVirtual) {
+            // Virtual-hosted-style: bucket as subdomain
+            host = `${this.bucket}.${endpointHost}`;
+            path = `/${key}`.replace(/\/+$/, '/');
+        } else {
+            // Path-style
+            host = endpointHost;
+            path = `/${this.bucket}/${key}`.replace(/\/+$/, '/');
+        }
+
+        // Build canonical query string
+        let canonicalQueryString = '';
+        if (query && Object.keys(query).length > 0) {
+            const sorted = Object.keys(query).sort();
+            canonicalQueryString = sorted.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`).join('&');
+        }
+
+        const url = `${protocol}//${host}${path}${canonicalQueryString ? `?${canonicalQueryString}` : ''}`;
+        const canonicalUri = path;
+
+        return { url, host, canonicalUri, canonicalQueryString };
+    }
+
+    shouldUseVirtualHost() {
+        // Prefer virtual-hosted for AWS default endpoint; allow override via AWS_S3_VIRTUAL_HOST
+        const endpointUrl = new URL(this.endpoint);
+        const isAwsDefault = /(^|\.)s3[.-][a-z0-9-]+\.amazonaws\.com$/i.test(endpointUrl.host);
+        const flag = this.env?.AWS_S3_VIRTUAL_HOST;
+        if (typeof flag !== 'undefined') {
+            return String(flag).toLowerCase() !== 'false';
+        }
+        return isAwsDefault;
     }
 }

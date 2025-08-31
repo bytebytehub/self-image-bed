@@ -22,9 +22,11 @@ export async function upload(c) {
     const user = c.get('user');
     const userId = user ? user.id : null;
 
-    // 添加调试日志
-    console.log('上传请求 - 用户信息:', user ? JSON.stringify(user) : '未登录');
-    console.log('上传请求 - 用户ID:', userId);
+    // 受限调试日志（避免记录敏感信息）
+    const debug = String(env.DEBUG || 'false').toLowerCase() === 'true';
+    if (debug) {
+        console.log('上传请求 - 用户状态:', user ? '已登录' : '未登录');
+    }
 
     try {
         const formData = await c.req.formData();
@@ -39,7 +41,7 @@ export async function upload(c) {
             throw new Error('未上传文件');
         }
 
-        console.log(`接收到${files.length}个文件上传请求`);
+        if (debug) console.log(`接收到${files.length}个文件上传请求`);
 
         // 初始化存储管理器
         const storageManager = new StorageManager(env);
@@ -47,13 +49,45 @@ export async function upload(c) {
         // 获取存储提供商选择 (默认使用 Telegram 保持向后兼容)
         const provider = formData.get('provider') || env.DEFAULT_STORAGE_PROVIDER || 'telegram';
 
+        // 读取并解析上传限制
+        const maxFileSize = (() => {
+            const raw = env.MAX_FILE_SIZE || '50MB';
+            const m = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)?$/i.exec(raw);
+            if (!m) return 50 * 1024 * 1024;
+            const value = parseFloat(m[1]);
+            const unit = (m[2] || 'MB').toUpperCase();
+            const map = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
+            return Math.floor(value * (map[unit] || map.MB));
+        })();
+
+        const allowedTypes = (env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/gif,image/webp')
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+
         // 处理所有文件上传
         const uploadResults = [];
+        const validationErrors = [];
         for (const uploadFile of files) {
             if (!uploadFile) continue;
 
             const fileName = uploadFile.name;
-            console.log(`处理文件: ${fileName}, 类型: ${uploadFile.type}, 大小: ${uploadFile.size}`);
+            if (debug) console.log(`处理文件: ${fileName}, 类型: ${uploadFile.type}, 大小: ${uploadFile.size}`);
+
+            // 校验大小
+            if (uploadFile.size > maxFileSize) {
+                validationErrors.push({ fileName, error: `文件超过大小限制 (${maxFileSize} bytes)` });
+                continue;
+            }
+
+            // 校验类型
+            const mime = (uploadFile.type || '').toLowerCase();
+            const ext = (fileName || '').split('.').pop()?.toLowerCase() || '';
+            const typeAllowed = allowedTypes.length === 0 || allowedTypes.some(t => t === mime || mime.startsWith(t + '/') || t === ext || t === '*/*');
+            if (!typeAllowed) {
+                validationErrors.push({ fileName, error: '文件类型不被允许' });
+                continue;
+            }
 
             try {
                 // 使用新的存储管理器上传文件
@@ -68,7 +102,7 @@ export async function upload(c) {
                 const fileKey = result.fileId;
                 const timestamp = result.timestamp || Date.now();
 
-                console.log(`文件 ${fileName} 上传成功，文件键: ${fileKey}`);
+                if (debug) console.log(`文件 ${fileName} 上传成功，文件键: ${fileKey}`);
 
                 // 保存文件元数据到 KV 存储
                 if (env.img_url) {
@@ -84,16 +118,21 @@ export async function upload(c) {
                         userId: userId || "anonymous"
                     };
 
-                    await env.img_url.put(fileKey, "", { metadata });
+                    // 单文件元数据索引：file:{fileKey}
+                    await env.img_url.put(`file:${fileKey}`, "", { metadata });
 
                     // 如果是已登录用户，将文件添加到用户的文件列表中
                     if (userId) {
-                        const userFilesKey = `user:${userId}:files`;
-                        let userFiles = await env.img_url.get(userFilesKey, { type: "json" }) || [];
+                        // 将文件ID追加到分片列表中以便分页：user:{userId}:files:index
+                        const indexKey = `user:${userId}:files:index`;
+                        const index = await env.img_url.get(indexKey, { type: 'json' }) || { ids: [], total: 0 };
+                        index.ids.push(fileKey);
+                        index.total = (index.total || 0) + 1;
+                        await env.img_url.put(indexKey, JSON.stringify(index));
 
-                        console.log('用户文件列表获取:', userFilesKey, userFiles.length ? `已有${userFiles.length}个文件` : '列表为空');
-
-                        const newFile = {
+                        // 为该用户建立条目 key：user:{userId}:file:{fileKey}
+                        const userFileKey = `user:${userId}:file:${fileKey}`;
+                        const userFileValue = JSON.stringify({
                             id: fileKey,
                             fileName: fileName,
                             fileSize: uploadFile.size,
@@ -101,28 +140,27 @@ export async function upload(c) {
                             provider: result.provider,
                             uploadTime: timestamp,
                             url: result.url
-                        };
-
-                        userFiles.push(newFile);
-                        console.log('添加新文件到用户列表:', newFile);
-
-                        await env.img_url.put(userFilesKey, JSON.stringify(userFiles));
-                        console.log('用户文件列表已更新, 现有文件数:', userFiles.length);
+                        });
+                        await env.img_url.put(userFileKey, userFileValue);
                     } else {
-                        console.log('匿名上传，不关联用户');
+                        if (debug) console.log('匿名上传，不关联用户');
                     }
                 }
 
                 // 添加到上传结果 (保持原有格式以兼容前端)
                 uploadResults.push({ 'src': result.url });
             } catch (error) {
-                console.error(`文件 ${fileName} 上传失败:`, error);
+                console.error(`文件 ${fileName} 上传失败:`, error?.message || String(error));
                 // 继续处理其他文件
                 continue;
             }
         }
 
-        console.log(`成功上传${uploadResults.length}个文件`);
+        if (validationErrors.length && uploadResults.length === 0) {
+            return c.json({ error: '部分或全部文件校验失败', details: validationErrors }, 400);
+        }
+
+        if (debug) console.log(`成功上传${uploadResults.length}个文件`);
         return c.json(uploadResults);
     } catch (error) {
         console.error('上传错误:', error);
