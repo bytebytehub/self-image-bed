@@ -1,0 +1,22 @@
+# Cloudflare Workers local development variables
+# Copy this file to .dev.vars and fill in your actual values
+# DO NOT commit .dev.vars to version control
+
+TG_Bot_Token=your-telegram-bot-token
+TG_Chat_ID=your-telegram-chat-id
+JWT_SECRET=generate-a-strong-random-secret-here
+
+# Optional storage providers
+# AWS_ACCESS_KEY_ID=your-aws-access-key
+# AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+# AWS_S3_BUCKET=your-s3-bucket
+# AWS_REGION=us-east-1
+
+# MINIO_ENDPOINT=your-minio-endpoint.com
+# MINIO_ACCESS_KEY=your-minio-access-key
+# MINIO_SECRET_KEY=your-minio-secret-key
+# MINIO_BUCKET=your-minio-bucket
+
+# SUPABASE_URL=https://your-project.supabase.co
+# SUPABASE_ANON_KEY=your-supabase-anon-key
+# SUPABASE_BUCKET=your-supabase-bucket
